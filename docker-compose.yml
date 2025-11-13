@@ -1,0 +1,177 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: nstp-postgres
+    environment:
+      POSTGRES_DB: transparency_platform
+      POSTGRES_USER: nstp_user
+      POSTGRES_PASSWORD: nstp_password_change_in_production
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nstp_user -d transparency_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nstp-network
+
+  # Redis Cache (for sessions, rate limiting, and Celery)
+  redis:
+    image: redis:7-alpine
+    container_name: nstp-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - nstp-network
+
+  # Backend API (FastAPI)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nstp-backend
+    environment:
+      # Database
+      DATABASE_URL: postgresql://nstp_user:nstp_password_change_in_production@postgres:5432/transparency_platform
+      
+      # Redis
+      REDIS_URL: redis://redis:6379/0
+      
+      # Security
+      SECRET_KEY: change_this_secret_key_in_production_use_openssl_rand_hex_32
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
+      REFRESH_TOKEN_EXPIRE_DAYS: 7
+      
+      # AWS S3
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-your_aws_access_key}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-your_aws_secret_key}
+      AWS_REGION: eu-west-1
+      AWS_S3_BUCKET: nstp-documents
+      
+      # Email (SendGrid)
+      SMTP_HOST: smtp.sendgrid.net
+      SMTP_PORT: 587
+      SMTP_USER: apikey
+      SMTP_PASSWORD: ${SENDGRID_API_KEY:-your_sendgrid_api_key}
+      EMAIL_FROM: noreply@strategyprogress.gov.na
+      EMAIL_FROM_NAME: "National Strategy Platform"
+      
+      # Application
+      APP_NAME: "National Strategy Transparency Platform"
+      APP_ENV: development
+      DEBUG: "true"
+      ALLOWED_HOSTS: "*"
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:80"
+      
+      # File Upload
+      MAX_UPLOAD_SIZE: 52428800  # 50MB in bytes
+      ALLOWED_EXTENSIONS: ".pdf,.jpg,.jpeg,.png"
+      
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - backend_uploads:/app/uploads  # Local file storage fallback
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nstp-network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Frontend React App
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nstp-frontend
+    environment:
+      REACT_APP_API_URL: http://localhost:8000/api/v1
+      REACT_APP_ENV: development
+      REACT_APP_APP_NAME: "National Strategy Transparency Platform"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - nstp-network
+    stdin_open: true
+    tty: true
+
+  # Celery Worker (for async tasks like email sending)
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nstp-celery-worker
+    environment:
+      DATABASE_URL: postgresql://nstp_user:nstp_password_change_in_production@postgres:5432/transparency_platform
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: change_this_secret_key_in_production_use_openssl_rand_hex_32
+      SMTP_HOST: smtp.sendgrid.net
+      SMTP_PORT: 587
+      SMTP_USER: apikey
+      SMTP_PASSWORD: ${SENDGRID_API_KEY:-your_sendgrid_api_key}
+      EMAIL_FROM: noreply@strategyprogress.gov.na
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - nstp-network
+    command: celery -A app.core.celery_app worker --loglevel=info
+    profiles:
+      - with-celery
+
+  # Celery Beat (for scheduled tasks like reminder emails)
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nstp-celery-beat
+    environment:
+      DATABASE_URL: postgresql://nstp_user:nstp_password_change_in_production@postgres:5432/transparency_platform
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: change_this_secret_key_in_production_use_openssl_rand_hex_32
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - nstp-network
+    command: celery -A app.core.celery_app beat --loglevel=info
+    profiles:
+      - with-celery
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  backend_uploads:
+    driver: local
+
+networks:
+  nstp-network:
+    driver: bridge
