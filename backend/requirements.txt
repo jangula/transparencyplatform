@@ -19,7 +19,7 @@ qrcode[pil]==7.4.2
 
 # Email
 emails==0.6
-aiosmtplib==3.0.1
+aiosmtplib==5.1.2
 
 # AWS S3
 boto3==1.33.13
