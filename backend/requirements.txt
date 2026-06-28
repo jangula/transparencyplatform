@@ -26,7 +26,7 @@ boto3==1.43.36
 botocore==1.43.36
 
 # Redis
-redis==5.0.1
+redis==8.0.1
 hiredis==2.2.3
 
 # Celery (Task Queue)
