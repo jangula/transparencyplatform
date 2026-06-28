@@ -65,7 +65,7 @@ isort==5.13.2
 
 # Development
 python-dotenv==1.2.2
-watchfiles==0.21.0
+watchfiles==1.2.0
 
 # Rate Limiting
 slowapi==0.1.10
