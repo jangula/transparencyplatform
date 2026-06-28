@@ -15,7 +15,7 @@ python-jose[cryptography]==3.5.0
 argon2-cffi==25.1.0
 python-multipart==0.0.32
 pyotp==2.10.0
-qrcode[pil]==7.4.2
+qrcode[pil]==8.2
 
 # Email
 emails==0.6
