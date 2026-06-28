@@ -40,7 +40,7 @@ aiofiles==23.2.1
 # Validation & Utilities
 email-validator==2.3.0
 python-slugify==8.0.4
-pytz==2023.3.post1
+pytz==2026.2
 
 # PDF Processing
 PyPDF2==3.0.1
